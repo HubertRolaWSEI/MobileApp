@@ -100,10 +100,9 @@ class Lab06Activity : ComponentActivity() {
 
         val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
 
-        alarmManager.setRepeating(
+        alarmManager.setExactAndAllowWhileIdle(
             AlarmManager.RTC_WAKEUP,
             time,
-            4 * 60 * 60 * 1000L,
             pendingIntent
         )
     }
@@ -145,6 +144,9 @@ class Lab06Activity : ComponentActivity() {
 
         createNotificationChannel()
         container = (this.application as TodoApplication).container
+
+        // MODYFIKACJA: Wywołanie testowe alarmu na 2 sekundy od teraz
+        scheduleAlarm(System.currentTimeMillis() + 2000L)
 
         setContent {
             MaterialTheme {
@@ -250,7 +252,6 @@ fun FormScreen(
 ) {
     val coroutineScope = rememberCoroutineScope()
 
-    // Jeśli taskId > 0, ładujemy zadanie do edycji
     LaunchedEffect(taskId) {
         if (taskId > 0) {
             viewModel.loadTask(taskId)
