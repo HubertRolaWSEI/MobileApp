@@ -1,17 +1,11 @@
 package pl.wsei.pam.lab06
 
 import android.Manifest
-import android.app.AlarmManager
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.content.Context
-import android.content.Intent
-import android.os.Build
-import android.os.Bundle
+import android.app.*
+import android.content.*
+import android.os.*
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.annotation.RequiresApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -32,31 +26,22 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavType
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
+import androidx.navigation.compose.*
 import androidx.navigation.navArgument
-import com.google.accompanist.permissions.ExperimentalPermissionsApi
-import com.google.accompanist.permissions.isGranted
-import com.google.accompanist.permissions.rememberPermissionState
+import com.google.accompanist.permissions.*
 import kotlinx.coroutines.launch
 import pl.wsei.pam.lab06.data.AppContainer
 import pl.wsei.pam.lab06.data.LocalDateConverter
 import pl.wsei.pam.lab06.viewmodel.*
 import java.time.LocalDate
 
-// --- STAŁE ---
-
+// --- STAŁE I MODELE ---
 const val notificationID = 121
 const val channelID = "Lab06 channel"
 const val titleExtra = "title"
 const val messageExtra = "message"
 
-// --- MODELE DANYCH ---
-
-enum class Priority {
-    High, Medium, Low
-}
+enum class Priority { High, Medium, Low }
 
 data class TodoTask(
     val id: Int = 0,
@@ -67,355 +52,154 @@ data class TodoTask(
 )
 
 // --- AKTYWNOŚĆ ---
-
 class Lab06Activity : ComponentActivity() {
-
-    companion object {
-        lateinit var container: AppContainer
-    }
+    companion object { lateinit var container: AppContainer }
 
     private fun createNotificationChannel() {
-        val name = "Lab06 channel"
-        val descriptionText = "Lab06 is channel for notifications for approaching tasks."
-        val importance = NotificationManager.IMPORTANCE_DEFAULT
-        val channel = NotificationChannel(channelID, name, importance).apply {
-            description = descriptionText
-        }
-        val notificationManager: NotificationManager =
-            getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.createNotificationChannel(channel)
+        val channel = NotificationChannel(channelID, "Zadania", NotificationManager.IMPORTANCE_DEFAULT)
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.createNotificationChannel(channel)
     }
 
     fun scheduleAlarm(time: Long) {
-        val intent = Intent(applicationContext, NotificationBroadcastReceiver::class.java)
-        intent.putExtra(titleExtra, "Deadline")
-        intent.putExtra(messageExtra, "Zbliża się termin zakończenia zadania")
-
-        val pendingIntent = PendingIntent.getBroadcast(
-            applicationContext,
-            notificationID,
-            intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
+        val intent = Intent(applicationContext, NotificationBroadcastReceiver::class.java).apply {
+            putExtra(titleExtra, "Deadline")
+            putExtra(messageExtra, "Zbliża się termin zakończenia zadania")
+        }
+        val pendingIntent = PendingIntent.getBroadcast(applicationContext, notificationID, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
-
-        alarmManager.setExactAndAllowWhileIdle(
-            AlarmManager.RTC_WAKEUP,
-            time,
-            pendingIntent
-        )
+        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, time, pendingIntent)
     }
 
     fun cancelAlarm() {
         val intent = Intent(applicationContext, NotificationBroadcastReceiver::class.java)
-        val pendingIntent = PendingIntent.getBroadcast(
-            applicationContext,
-            notificationID,
-            intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-        val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
-        alarmManager.cancel(pendingIntent)
+        val pendingIntent = PendingIntent.getBroadcast(applicationContext, notificationID, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_NO_CREATE)
+        if (pendingIntent != null) {
+            (getSystemService(ALARM_SERVICE) as AlarmManager).cancel(pendingIntent)
+        }
     }
 
     fun scheduleAlarmForClosestTask(tasks: List<TodoTask>) {
         val now = LocalDate.now()
         val undoneFutureTasks = tasks.filter { !it.isDone && it.deadline.isAfter(now) }
+        if (undoneFutureTasks.isEmpty()) { cancelAlarm(); return }
 
-        if (undoneFutureTasks.isEmpty()) {
-            cancelAlarm()
-            return
-        }
-
-        val closest = undoneFutureTasks.minByOrNull { it.deadline } ?: return
-        val alarmDate = closest.deadline.minusDays(1)
-        val alarmMillis = LocalDateConverter.toMillis(alarmDate)
-        val nowMillis = System.currentTimeMillis()
-        val finalTime = if (alarmMillis < nowMillis) nowMillis + 2000L else alarmMillis
+        val closest = undoneFutureTasks.minByOrNull { it.deadline }!!
+        val alarmMillis = LocalDateConverter.toMillis(closest.deadline.minusDays(1))
+        val finalTime = if (alarmMillis < System.currentTimeMillis()) System.currentTimeMillis() + 2000L else alarmMillis
 
         cancelAlarm()
         scheduleAlarm(finalTime)
     }
 
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         createNotificationChannel()
-        container = (this.application as TodoApplication).container
-
-        // MODYFIKACJA: Wywołanie testowe alarmu na 2 sekundy od teraz
-        scheduleAlarm(System.currentTimeMillis() + 2000L)
-
-        setContent {
-            MaterialTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    MainScreen(activity = this@Lab06Activity)
-                }
-            }
-        }
+        container = (application as TodoApplication).container
+        setContent { MaterialTheme { Surface { MainScreen(this@Lab06Activity) } } }
     }
 }
 
-// --- GŁÓWNY EKRAN I NAWIGACJA ---
-
-@RequiresApi(Build.VERSION_CODES.TIRAMISU)
+// --- EKRANY ---
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
-fun MainScreen(activity: Lab06Activity? = null) {
+fun MainScreen(activity: Lab06Activity) {
     val navController = rememberNavController()
+    val permission = rememberPermissionState(Manifest.permission.POST_NOTIFICATIONS)
+    LaunchedEffect(Unit) { if (!permission.status.isGranted) permission.launchPermissionRequest() }
 
-    val postNotificationPermission =
-        rememberPermissionState(permission = Manifest.permission.POST_NOTIFICATIONS)
-    LaunchedEffect(key1 = true) {
-        if (!postNotificationPermission.status.isGranted) {
-            postNotificationPermission.launchPermissionRequest()
-        }
-    }
-
-    NavHost(navController = navController, startDestination = "list") {
-        composable("list") { ListScreen(navController = navController, activity = activity) }
-        composable("form") { FormScreen(navController = navController, activity = activity) }
-        composable(
-            "form/{taskId}",
-            arguments = listOf(navArgument("taskId") { type = NavType.IntType })
-        ) { backStackEntry ->
-            val taskId = backStackEntry.arguments?.getInt("taskId") ?: 0
-            FormScreen(navController = navController, activity = activity, taskId = taskId)
+    NavHost(navController, "list") {
+        composable("list") { ListScreen(navController, activity) }
+        composable("form") { FormScreen(navController) }
+        composable("form/{taskId}", arguments = listOf(navArgument("taskId") { type = NavType.IntType })) {
+            FormScreen(navController, it.arguments?.getInt("taskId") ?: 0)
         }
     }
 }
 
-// --- EKRAN LISTY ---
-
 @Composable
-fun ListScreen(
-    navController: NavController,
-    activity: Lab06Activity? = null,
-    viewModel: ListViewModel = viewModel(factory = AppViewModelProvider.Factory)
-) {
-    val listUiState by viewModel.listUiState.collectAsState()
-
-    LaunchedEffect(listUiState.items) {
-        activity?.scheduleAlarmForClosestTask(listUiState.items)
-    }
+fun ListScreen(navController: NavController, activity: Lab06Activity, viewModel: ListViewModel = viewModel(factory = AppViewModelProvider.Factory)) {
+    val state by viewModel.listUiState.collectAsState()
+    LaunchedEffect(state.items) { activity.scheduleAlarmForClosestTask(state.items) }
 
     Scaffold(
-        topBar = {
-            AppTopBar(
-                navController = navController,
-                title = "Lista zadań",
-                showBackIcon = false,
-                route = "form"
-            )
-        },
+        topBar = { AppTopBar(navController, "Lista zadań", false, "form") },
         floatingActionButton = {
-            FloatingActionButton(
-                shape = CircleShape,
-                onClick = { navController.navigate("form") },
-                content = {
-                    Icon(
-                        imageVector = Icons.Filled.Add,
-                        contentDescription = "Dodaj zadanie",
-                        modifier = Modifier.scale(1.5f)
-                    )
-                }
-            )
-        },
-        content = { paddingValues ->
-            LazyColumn(modifier = Modifier.padding(paddingValues)) {
-                items(items = listUiState.items, key = { it.id }) { task ->
-                    ListItem(
-                        item = task,
-                        onEdit = { navController.navigate("form/${task.id}") },
-                        onDelete = { viewModel.deleteTask(task) }
-                    )
-                }
+            FloatingActionButton(shape = CircleShape, onClick = { navController.navigate("form") }) {
+                Icon(Icons.Filled.Add, "Dodaj", modifier = Modifier.scale(1.5f))
             }
         }
-    )
+    ) { padding ->
+        LazyColumn(Modifier.padding(padding)) {
+            items(state.items, key = { it.id }) { task ->
+                ListItem(task, { navController.navigate("form/${task.id}") }, { viewModel.deleteTask(task) })
+            }
+        }
+    }
 }
-
-// --- EKRAN FORMULARZA ---
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FormScreen(
-    navController: NavController,
-    activity: Lab06Activity? = null,
-    taskId: Int = 0,
-    viewModel: FormViewModel = viewModel(factory = AppViewModelProvider.Factory)
-) {
-    val coroutineScope = rememberCoroutineScope()
+fun FormScreen(navController: NavController, taskId: Int = 0, viewModel: FormViewModel = viewModel(factory = AppViewModelProvider.Factory)) {
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(taskId) { if (taskId > 0) viewModel.loadTask(taskId) }
 
-    LaunchedEffect(taskId) {
-        if (taskId > 0) {
-            viewModel.loadTask(taskId)
-        }
-    }
-
-    Scaffold(
-        topBar = {
-            AppTopBar(
-                navController = navController,
-                title = if (viewModel.isEditMode) "Edytuj zadanie" else "Dodaj zadanie",
-                showBackIcon = true,
-                route = "list",
-                onSaveClick = {
-                    if (viewModel.todoTaskUiState.isValid) {
-                        coroutineScope.launch {
-                            viewModel.save()
-                            navController.navigate("list") {
-                                popUpTo("list") { inclusive = true }
-                            }
-                        }
-                    }
-                }
-            )
-        }
-    ) {
-        TodoTaskInputBody(
-            todoUiState = viewModel.todoTaskUiState,
-            onItemValueChange = viewModel::updateUiState,
-            modifier = Modifier.padding(it)
-        )
-    }
+    Scaffold(topBar = {
+        AppTopBar(navController, if (viewModel.isEditMode) "Edytuj zadanie" else "Dodaj zadanie", true, "list", onSaveClick = {
+            if (viewModel.todoTaskUiState.isValid) scope.launch { viewModel.save(); navController.popBackStack() }
+        })
+    }) { padding -> TodoTaskInputBody(viewModel.todoTaskUiState, viewModel::updateUiState, Modifier.padding(padding)) }
 }
 
-// --- BODY FORMULARZA ---
-
+// --- KOMPONENTY FORMULARZA ---
 @Composable
-fun TodoTaskInputBody(
-    todoUiState: TodoTaskUiState,
-    onItemValueChange: (TodoTaskForm) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier.padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        TodoTaskInputForm(
-            item = todoUiState.todoTask,
-            onValueChange = onItemValueChange,
-            modifier = modifier
-        )
+fun TodoTaskInputBody(uiState: TodoTaskUiState, onValueChange: (TodoTaskForm) -> Unit, modifier: Modifier) {
+    Column(modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        TodoTaskInputForm(uiState.todoTask, onValueChange)
     }
 }
-
-// --- FORMULARZ Z POLAMI ---
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TodoTaskInputForm(
-    item: TodoTaskForm,
-    modifier: Modifier = Modifier,
-    onValueChange: (TodoTaskForm) -> Unit = {},
-    enabled: Boolean = true
-) {
+fun TodoTaskInputForm(item: TodoTaskForm, onValueChange: (TodoTaskForm) -> Unit) {
     Text("Tytuł zadania")
-    TextField(
-        value = item.title,
-        onValueChange = {
-            onValueChange(item.copy(title = it))
-        }
-    )
+    TextField(value = item.title, onValueChange = { onValueChange(item.copy(title = it)) }, Modifier.fillMaxWidth())
 
-    val datePickerState = rememberDatePickerState(
-        initialDisplayMode = DisplayMode.Picker,
-        yearRange = IntRange(2000, 2030),
-        initialSelectedDateMillis = item.deadline
-    )
     var showDialog by remember { mutableStateOf(false) }
-
-    Text(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = { showDialog = true }),
-        text = "Date",
-        textAlign = TextAlign.Center,
-        style = MaterialTheme.typography.headlineMedium
-    )
+    val dateState = rememberDatePickerState(initialSelectedDateMillis = item.deadline)
+    Text("Data: ${LocalDateConverter.fromMillis(item.deadline)}", Modifier.clickable { showDialog = true }.fillMaxWidth(), textAlign = TextAlign.Center, style = MaterialTheme.typography.headlineSmall)
 
     if (showDialog) {
-        DatePickerDialog(
-            onDismissRequest = { showDialog = false },
-            confirmButton = {
-                Button(onClick = {
-                    showDialog = false
-                    onValueChange(item.copy(deadline = datePickerState.selectedDateMillis!!))
-                }) {
-                    Text("Pick")
-                }
-            }
-        ) {
-            DatePicker(state = datePickerState, showModeToggle = true)
-        }
+        DatePickerDialog(onDismissRequest = { showDialog = false }, confirmButton = {
+            Button(onClick = { showDialog = false; onValueChange(item.copy(deadline = dateState.selectedDateMillis ?: item.deadline)) }) { Text("OK") }
+        }) { DatePicker(dateState) }
     }
 
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text("Wykonane", modifier = Modifier.weight(1f))
-        Switch(
-            checked = item.isDone,
-            onCheckedChange = {
-                onValueChange(item.copy(isDone = it))
-            }
-        )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Wykonane", Modifier.weight(1f))
+        Switch(item.isDone, { onValueChange(item.copy(isDone = it)) })
     }
 
     Text("Priorytet")
-    Column {
-        Priority.values().forEach { priorityOption ->
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onValueChange(item.copy(priority = priorityOption.name)) }
-                    .padding(vertical = 4.dp)
-            ) {
-                RadioButton(
-                    selected = item.priority == priorityOption.name,
-                    onClick = { onValueChange(item.copy(priority = priorityOption.name)) }
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(text = priorityOption.name)
-            }
+    Priority.values().forEach { p ->
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { onValueChange(item.copy(priority = p.name)) }) {
+            RadioButton(item.priority == p.name, { onValueChange(item.copy(priority = p.name)) })
+            Text(p.name)
         }
     }
 }
 
-// --- KOMPONENT ELEMENTU LISTY ---
-
+// --- ELEMENT LISTY (Z PRIORYTETEM) ---
 @Composable
-fun ListItem(
-    item: TodoTask,
-    onEdit: () -> Unit = {},
-    onDelete: () -> Unit = {},
-    modifier: Modifier = Modifier
-) {
-    ElevatedCard(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .clickable { onEdit() },
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.Top
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = item.title, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+fun ListItem(item: TodoTask, onEdit: () -> Unit, onDelete: () -> Unit) {
+    Card(Modifier.padding(8.dp).fillMaxWidth().clickable { onEdit() }) {
+        Row(Modifier.padding(16.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text(item.title, fontWeight = FontWeight.Bold, fontSize = 20.sp)
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(text = "Termin: ${item.deadline}", fontSize = 14.sp)
+                Text("Termin: ${item.deadline}", fontSize = 14.sp)
 
                 val priorityColor = when (item.priority) {
                     Priority.High -> Color.Red
@@ -428,60 +212,44 @@ fun ListItem(
                     color = priorityColor,
                     fontWeight = FontWeight.Medium
                 )
+
                 Text(
                     text = if (item.isDone) "Wykonane ✓" else "Do zrobienia",
                     fontSize = 14.sp,
                     color = if (item.isDone) Color(0xFF009900) else Color.Gray
                 )
             }
-            IconButton(onClick = onDelete) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Usuń",
-                    tint = Color.Red
-                )
-            }
+            IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "Usuń", tint = Color.Red) }
         }
     }
 }
 
-// --- TOP BAR ---
-
+// --- PASEK GÓRNY (Z IKONĄ HOME) ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppTopBar(
-    navController: NavController,
-    title: String,
-    showBackIcon: Boolean,
-    route: String,
-    onSaveClick: () -> Unit = {}
-) {
+fun AppTopBar(navController: NavController, title: String, showBackIcon: Boolean, route: String, onSaveClick: () -> Unit = {}) {
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer,
             titleContentColor = MaterialTheme.colorScheme.primary
         ),
-        title = { Text(text = title) },
+        title = { Text(title) },
         navigationIcon = {
             if (showBackIcon) {
-                IconButton(onClick = { navController.navigate(route) }) {
-                    Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Wróć")
-                }
+                IconButton(onClick = { navController.popBackStack() }) { Icon(Icons.Filled.ArrowBack, "Wróć") }
             }
         },
         actions = {
-            if (route != "form") {
-                OutlinedButton(onClick = onSaveClick) {
-                    Text(text = "Zapisz", fontSize = 18.sp)
-                }
+            if (showBackIcon) {
+                OutlinedButton(onClick = onSaveClick) { Text("Zapisz", fontSize = 18.sp) }
             } else {
                 IconButton(onClick = {
                     Lab06Activity.container.notificationHandler.showSimpleNotification()
                 }) {
-                    Icon(imageVector = Icons.Default.Settings, contentDescription = "Ustawienia")
+                    Icon(Icons.Default.Settings, "Ustawienia")
                 }
-                IconButton(onClick = { }) {
-                    Icon(imageVector = Icons.Default.Home, contentDescription = "Home")
+                IconButton(onClick = { /* Akcja Home */ }) {
+                    Icon(Icons.Default.Home, "Home")
                 }
             }
         }

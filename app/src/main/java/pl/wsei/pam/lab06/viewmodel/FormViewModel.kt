@@ -34,59 +34,23 @@ class FormViewModel(
     suspend fun save() {
         if (validate()) {
             val task = todoTaskUiState.todoTask.toTodoTask()
-            if (isEditMode) {
-                repository.updateItem(task)
-            } else {
-                repository.insertItem(task)
-            }
+            if (isEditMode) repository.updateItem(task) else repository.insertItem(task)
         }
     }
 
-    fun updateUiState(todoTaskForm: TodoTaskForm) {
-        todoTaskUiState = TodoTaskUiState(
-            todoTask = todoTaskForm,
-            isValid = validate(todoTaskForm)
-        )
+    fun updateUiState(form: TodoTaskForm) {
+        todoTaskUiState = TodoTaskUiState(todoTask = form, isValid = validate(form))
     }
 
     private fun validate(uiState: TodoTaskForm = todoTaskUiState.todoTask): Boolean {
-        return with(uiState) {
-            title.isNotBlank() &&
-                    !LocalDateConverter.fromMillis(deadline).isBefore(dateProvider.currentDate)
-        }
+        val deadlineDate = LocalDateConverter.fromMillis(uiState.deadline)
+        return uiState.title.isNotBlank() && deadlineDate.isAfter(dateProvider.currentDate)
     }
 }
 
-data class TodoTaskUiState(
-    var todoTask: TodoTaskForm = TodoTaskForm(),
-    val isValid: Boolean = false
-)
+data class TodoTaskUiState(val todoTask: TodoTaskForm = TodoTaskForm(), val isValid: Boolean = false)
+data class TodoTaskForm(val id: Int = 0, val title: String = "", val deadline: Long = LocalDateConverter.toMillis(LocalDate.now()), val isDone: Boolean = false, val priority: String = Priority.Low.name)
 
-data class TodoTaskForm(
-    val id: Int = 0,
-    val title: String = "",
-    val deadline: Long = LocalDateConverter.toMillis(LocalDate.now()),
-    val isDone: Boolean = false,
-    val priority: String = Priority.Low.name
-)
-
-fun TodoTask.toTodoTaskUiState(isValid: Boolean = false): TodoTaskUiState = TodoTaskUiState(
-    todoTask = this.toTodoTaskForm(),
-    isValid = isValid
-)
-
-fun TodoTaskForm.toTodoTask(): TodoTask = TodoTask(
-    id = id,
-    title = title,
-    deadline = LocalDateConverter.fromMillis(deadline),
-    isDone = isDone,
-    priority = Priority.valueOf(priority)
-)
-
-fun TodoTask.toTodoTaskForm(): TodoTaskForm = TodoTaskForm(
-    id = id,
-    title = title,
-    deadline = LocalDateConverter.toMillis(deadline),
-    isDone = isDone,
-    priority = priority.name
-)
+fun TodoTask.toTodoTaskUiState(isValid: Boolean = false): TodoTaskUiState = TodoTaskUiState(todoTask = this.toTodoTaskForm(), isValid = isValid)
+fun TodoTaskForm.toTodoTask(): TodoTask = TodoTask(id = id, title = title, deadline = LocalDateConverter.fromMillis(deadline), isDone = isDone, priority = Priority.valueOf(priority))
+fun TodoTask.toTodoTaskForm(): TodoTaskForm = TodoTaskForm(id = id, title = title, deadline = LocalDateConverter.toMillis(deadline), isDone = isDone, priority = priority.name)
